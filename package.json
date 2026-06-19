@@ -14,15 +14,18 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
+    "cookie": "^1.1.1",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "google-auth-library": "^10.7.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "tsx": "^4.22.4"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/cookie": "^0.6.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^24.12.3",

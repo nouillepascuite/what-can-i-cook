@@ -6,6 +6,7 @@ import {
   type KeyboardEvent,
   type CSSProperties,
 } from "react";
+import Login from "./Login";
 
 const STAPLES = [
   "salt",
@@ -55,6 +56,40 @@ function hasIngredient(have: Set<string>, ingredient: string): boolean {
 }
 
 export default function App() {
+  const [authState, setAuthState] = useState<"loading" | "unauthenticated" | "authenticated">("loading");
+  const [userEmail, setUserEmail] = useState("");
+
+  useEffect(() => {
+    fetch("/auth/me")
+      .then((res) => {
+        if (res.ok) return res.json();
+        throw new Error("Unauthorized");
+      })
+      .then((data: { email: string }) => {
+        setUserEmail(data.email);
+        setAuthState("authenticated");
+      })
+      .catch(() => setAuthState("unauthenticated"));
+  }, []);
+
+  if (authState === "loading") {
+    return (
+      <div className="login">
+        <div className="login-card">
+          <div className="empty-icon empty-icon--load">·</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (authState === "unauthenticated") {
+    return <Login />;
+  }
+
+  return <AppContent userEmail={userEmail} onLogout={() => setAuthState("unauthenticated")} />;
+}
+
+function AppContent({ userEmail, onLogout }: { userEmail: string; onLogout: () => void }) {
   const [input, setInput] = useState("");
   const [tags, setTags] = useState<string[]>(() =>
     loadList("ingredients", [])
@@ -390,6 +425,17 @@ export default function App() {
               Stop
             </button>
           )}
+          <div className="user-bar">
+            <span className="user-email">{userEmail}</span>
+            <button
+              className="logout-btn"
+              onClick={() => {
+                fetch("/auth/logout", { method: "POST" }).then(() => onLogout());
+              }}
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </aside>
 
