@@ -123,7 +123,7 @@ function AppContent({ userEmail, onLogout }: { userEmail: string; onLogout: () =
   /* ---------- ingredient tags ---------- */
   function addTag() {
     const trimmed = input.trim().toLowerCase();
-    if (trimmed && !tags.includes(trimmed)) {
+    if (trimmed && !tags.includes(trimmed) && !alwaysHave.includes(trimmed)) {
       setTags((prev) => [...prev, trimmed]);
     }
     setInput("");
@@ -140,7 +140,15 @@ function AppContent({ userEmail, onLogout }: { userEmail: string; onLogout: () =
     }
   }
 
-  /* ---------- always have + drag/drop ---------- */
+  /* ---------- always have: pin/unpin + drag/drop ---------- */
+  function pinTag(name: string) {
+    setAlwaysHave((prev) => (prev.includes(name) ? prev : [...prev, name]));
+    setTags((prev) => prev.filter((t) => t !== name));
+  }
+  function unpinTag(name: string) {
+    setAlwaysHave((prev) => prev.filter((t) => t !== name));
+    setTags((prev) => (prev.includes(name) ? prev : [...prev, name]));
+  }
   function removeAlways(tag: string) {
     setAlwaysHave((prev) => prev.filter((t) => t !== tag));
   }
@@ -299,7 +307,8 @@ function AppContent({ userEmail, onLogout }: { userEmail: string; onLogout: () =
   }
 
   /* ---------- derived UI values ---------- */
-  const tagCount = tags.length === 1 ? "1 item" : `${tags.length} items`;
+  const displayTags = tags.filter((t) => !alwaysHave.includes(t));
+  const tagCount = displayTags.length === 1 ? "1 item" : `${displayTags.length} items`;
   const timeLabel = maxTime >= 90 ? "Any" : `≤ ${maxTime} min`;
   const missingLabel =
     maxMissing === 0 ? "None" : maxMissing >= 5 ? "Any" : `Up to ${maxMissing}`;
@@ -313,9 +322,242 @@ function AppContent({ userEmail, onLogout }: { userEmail: string; onLogout: () =
     { key: "dinner", label: "Dinner" },
   ];
 
+  /* ---------- shared UI blocks ---------- */
+  const alwaysHaveSection = (
+    <div className="always">
+      <button
+        className="always-head"
+        onClick={() => setAlwaysOpen((v) => !v)}
+      >
+        <span className="always-head-label">
+          <span className="always-caret">{alwaysOpen ? "▼" : "▶"}</span>
+          Always have
+        </span>
+        <span className="always-count">{alwaysHave.length}</span>
+      </button>
+      {alwaysOpen && (
+        <div
+          className="always-body"
+          onDragOver={allowDrop}
+          onDrop={dropToAlways}
+        >
+          {alwaysHave.map((it) => (
+            <button
+              key={it}
+              className="always-chip"
+              draggable
+              onDragStart={onDragStart(it, "always")}
+              onClick={() => unpinTag(it)}
+            >
+              <span className="pin-icon">★</span>
+              {it}
+              <span
+                className="remove-btn desktop-only"
+                role="button"
+                onClick={(e) => { e.stopPropagation(); removeAlways(it); }}
+                aria-label={`Remove ${it}`}
+              >
+                ×
+              </span>
+            </button>
+          ))}
+          {alwaysHave.length === 0 && (
+            <span className="always-hint">
+              <span className="desktop-only">Drag ingredients here to always keep them on hand.</span>
+              <span className="mobile-only">Tap ★ on an ingredient below to always keep it on hand.</span>
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  const filtersSection = (
+    <div className="filter-card">
+      <div className="control">
+        <div className="control-head">
+          <span className="control-label">Max cook time</span>
+          <span className="control-value">{timeLabel}</span>
+        </div>
+        <input
+          className="slider"
+          type="range"
+          min={10}
+          max={90}
+          step={5}
+          value={maxTime}
+          onChange={(e) => setMaxTime(+e.target.value)}
+          style={{ "--fill": timeFill, "--fc": "var(--blue)" } as CSSProperties}
+        />
+      </div>
+
+      <div className="control">
+        <div className="control-head">
+          <span className="control-label">Missing allowed</span>
+          <span className="control-value">{missingLabel}</span>
+        </div>
+        <input
+          className="slider"
+          type="range"
+          min={0}
+          max={5}
+          step={1}
+          value={maxMissing}
+          onChange={(e) => setMaxMissing(+e.target.value)}
+          style={{ "--fill": missFill, "--fc": "var(--miss)" } as CSSProperties}
+        />
+      </div>
+
+      <div className="control" style={{ maxWidth: "none", minWidth: 0 }}>
+        <span className="control-label">Meal</span>
+        <div className="meal-toggle">
+          {meals.map((m) => (
+            <button
+              key={m.key}
+              className={
+                "meal-btn" + (meal === m.key ? " meal-btn--active" : "")
+              }
+              onClick={() => setMeal(m.key)}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  const recipesSection = (
+    <>
+      {searched && (recipes.length > 0 || loading) && (
+        <div className="results-head">
+          <h2 className="results-title">
+            {filtered.length === 1
+              ? "1 recipe"
+              : `${filtered.length} recipes`}
+          </h2>
+          <span className="results-sub">
+            {loading ? "Cooking up ideas…" : "From your pantry"}
+          </span>
+        </div>
+      )}
+
+      {filtered.length > 0 && (
+        <div className="recipe-grid">
+          {filtered.map(({ recipe, missing }, i) => {
+            const accent = ACCENTS[i % ACCENTS.length];
+            return (
+              <article
+                key={recipe.name + i}
+                className="recipe-card"
+                style={{ "--accent": accent } as CSSProperties}
+              >
+                <div className="recipe-top">
+                  <div className="recipe-meta">
+                    <span className="meal-pill">
+                      {MEAL_LABELS[recipe.meal] ?? recipe.meal}
+                    </span>
+                    <span className="time-pill">{recipe.time} min</span>
+                  </div>
+                  <h3 className="recipe-name">{recipe.name}</h3>
+                </div>
+
+                <div className="chips">
+                  {recipe.ingredients.map((ing) => (
+                    <span
+                      key={ing}
+                      className={
+                        "chip" +
+                        (missing.includes(ing) ? " chip--missing" : "")
+                      }
+                    >
+                      {ing}
+                    </span>
+                  ))}
+                </div>
+
+                <div>
+                  {missing.length === 0 ? (
+                    <span className="status--ok">You have everything</span>
+                  ) : (
+                    <span className="status--buy">
+                      <b>Need to buy:</b> {missing.join(", ")}
+                    </span>
+                  )}
+                </div>
+
+                <ol className="steps">
+                  {recipe.steps.map((text, n) => (
+                    <li key={n} className="step">
+                      <span className="step-num">{n + 1}</span>
+                      <span className="step-text">{text}</span>
+                    </li>
+                  ))}
+                </ol>
+              </article>
+            );
+          })}
+        </div>
+      )}
+
+      {!loading && !searched && (
+        <div className="empty">
+          <div className="empty-icon">?</div>
+          <p className="empty-title">Ready when you are</p>
+          <p className="empty-sub">
+            Add a few ingredients, then hit Find recipes to see what you can
+            cook.
+          </p>
+        </div>
+      )}
+      {loading && recipes.length === 0 && (
+        <div className="empty">
+          <div className="empty-icon empty-icon--load">·</div>
+          <p className="empty-title">Finding recipes</p>
+          <p className="empty-sub">Reading your pantry…</p>
+        </div>
+      )}
+      {!loading && searched && recipes.length > 0 && filtered.length === 0 && (
+        <div className="empty">
+          <div className="empty-icon">!</div>
+          <p className="empty-title">No matches</p>
+          <p className="empty-sub">
+            Try allowing more missing ingredients, a longer cook time, or a
+            different meal.
+          </p>
+        </div>
+      )}
+      {!loading && error && (
+        <div className="empty">
+          <div className="empty-icon">!</div>
+          <p className="empty-title">Something went wrong</p>
+          <p className="empty-sub">{error}</p>
+        </div>
+      )}
+    </>
+  );
+
+  const actionButtons = (
+    <div className="action-buttons">
+      <button
+        className="cook-btn"
+        onClick={handleSubmit}
+        disabled={loading || (tags.length === 0 && alwaysHave.length === 0)}
+      >
+        {loading ? "Thinking…" : "Find recipes"}
+      </button>
+      {loading && (
+        <button className="stop-btn" onClick={handleStop}>
+          Stop
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <div className="app">
-      <aside className="sidebar">
+      {/* ===== Desktop layout ===== */}
+      <aside className="sidebar desktop-only">
         <div className="sidebar-head">
           <h1 className="logo">
             What can
@@ -336,73 +578,30 @@ function AppContent({ userEmail, onLogout }: { userEmail: string; onLogout: () =
           autoFocus
         />
 
-        <div className="always">
-          <button
-            className="always-head"
-            onClick={() => setAlwaysOpen((v) => !v)}
-          >
-            <span className="always-head-label">
-              <span className="always-caret">{alwaysOpen ? "▼" : "▶"}</span>
-              Always have
-            </span>
-            <span className="always-count">{alwaysHave.length}</span>
-          </button>
-          {alwaysOpen && (
-            <div
-              className="always-body"
-              onDragOver={allowDrop}
-              onDrop={dropToAlways}
-            >
-              {alwaysHave.map((it) => (
-                <span
-                  key={it}
-                  className="always-chip"
-                  draggable
-                  onDragStart={onDragStart(it, "always")}
-                >
-                  {it}
-                  <button
-                    className="remove-btn"
-                    onClick={() => removeAlways(it)}
-                    aria-label={`Remove ${it}`}
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-              {alwaysHave.length === 0 && (
-                <span className="always-hint">
-                  Drag ingredients here to always keep them on hand.
-                </span>
-              )}
-            </div>
-          )}
-        </div>
+        {alwaysHaveSection}
 
         <ul
           className="ingredient-list scroll"
           onDragOver={allowDrop}
           onDrop={dropToTags}
         >
-          {tags
-            .filter((t) => !alwaysHave.includes(t))
-            .map((tag) => (
-              <li
-                key={tag}
-                className="ingredient-item"
-                draggable
-                onDragStart={onDragStart(tag, "tags")}
+          {displayTags.map((tag) => (
+            <li
+              key={tag}
+              className="ingredient-item"
+              draggable
+              onDragStart={onDragStart(tag, "tags")}
+            >
+              <span>{tag}</span>
+              <button
+                className="remove-btn"
+                onClick={() => removeTag(tag)}
+                aria-label={`Remove ${tag}`}
               >
-                <span>{tag}</span>
-                <button
-                  className="remove-btn"
-                  onClick={() => removeTag(tag)}
-                  aria-label={`Remove ${tag}`}
-                >
-                  ×
-                </button>
-              </li>
-            ))}
+                ×
+              </button>
+            </li>
+          ))}
         </ul>
 
         <div className="staples-note">
@@ -413,18 +612,7 @@ function AppContent({ userEmail, onLogout }: { userEmail: string; onLogout: () =
         </div>
 
         <div className="sidebar-footer">
-          <button
-            className="cook-btn"
-            onClick={handleSubmit}
-            disabled={loading || (tags.length === 0 && alwaysHave.length === 0)}
-          >
-            {loading ? "Thinking…" : "Find recipes"}
-          </button>
-          {loading && (
-            <button className="stop-btn" onClick={handleStop}>
-              Stop
-            </button>
-          )}
+          {actionButtons}
           <div className="user-bar">
             <span className="user-email">{userEmail}</span>
             <button
@@ -439,170 +627,101 @@ function AppContent({ userEmail, onLogout }: { userEmail: string; onLogout: () =
         </div>
       </aside>
 
-      <main className="main scroll">
+      <main className="main scroll desktop-only">
         <div className="controls">
           <div className="controls-row">
-            <div className="control">
-              <div className="control-head">
-                <span className="control-label">Max cook time</span>
-                <span className="control-value">{timeLabel}</span>
-              </div>
-              <input
-                className="slider"
-                type="range"
-                min={10}
-                max={90}
-                step={5}
-                value={maxTime}
-                onChange={(e) => setMaxTime(+e.target.value)}
-                style={{ "--fill": timeFill, "--fc": "var(--blue)" } as CSSProperties}
-              />
-            </div>
+            {filtersSection}
+          </div>
+        </div>
+        <div className="results">
+          {recipesSection}
+        </div>
+      </main>
 
-            <div className="control">
-              <div className="control-head">
-                <span className="control-label">Missing allowed</span>
-                <span className="control-value">{missingLabel}</span>
-              </div>
-              <input
-                className="slider"
-                type="range"
-                min={0}
-                max={5}
-                step={1}
-                value={maxMissing}
-                onChange={(e) => setMaxMissing(+e.target.value)}
-                style={{ "--fill": missFill, "--fc": "var(--miss)" } as CSSProperties}
-              />
-            </div>
+      {/* ===== Mobile layout ===== */}
+      <div className="mobile-layout mobile-only">
+        <div className="mobile-header">
+          <div className="sidebar-head">
+            <h1 className="logo">
+              What can
+              <br />I cook
+            </h1>
+            <span className="tag-count">{tagCount}</span>
+          </div>
+          <input
+            className="add-input"
+            type="text"
+            placeholder="Add ingredient…"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onBlur={addTag}
+            disabled={loading}
+          />
+        </div>
 
-            <div className="control" style={{ flex: "none", maxWidth: "none", minWidth: 0 }}>
-              <span className="control-label">Meal</span>
-              <div className="meal-toggle">
-                {meals.map((m) => (
+        <div className="mobile-body">
+          {alwaysHaveSection}
+
+          <div className="mobile-ingredients">
+            <span className="section-label">Your ingredients</span>
+            <div className="ingredient-chips">
+              {displayTags.map((tag) => (
+                <span key={tag} className="ingredient-chip">
                   <button
-                    key={m.key}
-                    className={
-                      "meal-btn" + (meal === m.key ? " meal-btn--active" : "")
-                    }
-                    onClick={() => setMeal(m.key)}
+                    className="pin-btn"
+                    onClick={() => pinTag(tag)}
+                    aria-label="Always have"
                   >
-                    {m.label}
+                    ☆
                   </button>
-                ))}
-              </div>
+                  {tag}
+                  <button
+                    className="remove-btn"
+                    onClick={() => removeTag(tag)}
+                    aria-label={`Remove ${tag}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              {displayTags.length === 0 && (
+                <span className="always-hint">
+                  Add ingredients above to get started.
+                </span>
+              )}
+            </div>
+          </div>
+
+          {filtersSection}
+
+          {actionButtons}
+
+          <div className="results">
+            {recipesSection}
+          </div>
+
+          <div className="mobile-footer">
+            <div className="staples-note">
+              <p>
+                Pantry staples — salt, pepper, oil, butter, flour, water, sugar
+                — are always assumed on hand.
+              </p>
+            </div>
+            <div className="user-bar">
+              <span className="user-email">{userEmail}</span>
+              <button
+                className="logout-btn"
+                onClick={() => {
+                  fetch("/auth/logout", { method: "POST" }).then(() => onLogout());
+                }}
+              >
+                Sign out
+              </button>
             </div>
           </div>
         </div>
-
-        <div className="results">
-          {searched && (recipes.length > 0 || loading) && (
-            <div className="results-head">
-              <h2 className="results-title">
-                {filtered.length === 1
-                  ? "1 recipe"
-                  : `${filtered.length} recipes`}
-              </h2>
-              <span className="results-sub">
-                {loading ? "Cooking up ideas…" : "From your pantry"}
-              </span>
-            </div>
-          )}
-
-          {filtered.length > 0 && (
-            <div className="recipe-grid">
-              {filtered.map(({ recipe, missing }, i) => {
-                const accent = ACCENTS[i % ACCENTS.length];
-                return (
-                  <article
-                    key={recipe.name + i}
-                    className="recipe-card"
-                    style={{ "--accent": accent } as CSSProperties}
-                  >
-                    <div className="recipe-top">
-                      <div className="recipe-meta">
-                        <span className="meal-pill">
-                          {MEAL_LABELS[recipe.meal] ?? recipe.meal}
-                        </span>
-                        <span className="time-pill">{recipe.time} min</span>
-                      </div>
-                      <h3 className="recipe-name">{recipe.name}</h3>
-                    </div>
-
-                    <div className="chips">
-                      {recipe.ingredients.map((ing) => (
-                        <span
-                          key={ing}
-                          className={
-                            "chip" +
-                            (missing.includes(ing) ? " chip--missing" : "")
-                          }
-                        >
-                          {ing}
-                        </span>
-                      ))}
-                    </div>
-
-                    <div>
-                      {missing.length === 0 ? (
-                        <span className="status--ok">You have everything</span>
-                      ) : (
-                        <span className="status--buy">
-                          <b>Need to buy:</b> {missing.join(", ")}
-                        </span>
-                      )}
-                    </div>
-
-                    <ol className="steps">
-                      {recipe.steps.map((text, n) => (
-                        <li key={n} className="step">
-                          <span className="step-num">{n + 1}</span>
-                          <span className="step-text">{text}</span>
-                        </li>
-                      ))}
-                    </ol>
-                  </article>
-                );
-              })}
-            </div>
-          )}
-
-          {!loading && !searched && (
-            <div className="empty">
-              <div className="empty-icon">?</div>
-              <p className="empty-title">Ready when you are</p>
-              <p className="empty-sub">
-                Add a few ingredients on the left, then hit Find recipes to see
-                what you can cook.
-              </p>
-            </div>
-          )}
-          {loading && recipes.length === 0 && (
-            <div className="empty">
-              <div className="empty-icon empty-icon--load">·</div>
-              <p className="empty-title">Finding recipes</p>
-              <p className="empty-sub">Reading your pantry…</p>
-            </div>
-          )}
-          {!loading && searched && recipes.length > 0 && filtered.length === 0 && (
-            <div className="empty">
-              <div className="empty-icon">!</div>
-              <p className="empty-title">No matches</p>
-              <p className="empty-sub">
-                Try allowing more missing ingredients, a longer cook time, or a
-                different meal.
-              </p>
-            </div>
-          )}
-          {!loading && error && (
-            <div className="empty">
-              <div className="empty-icon">!</div>
-              <p className="empty-title">Something went wrong</p>
-              <p className="empty-sub">{error}</p>
-            </div>
-          )}
-        </div>
-      </main>
+      </div>
     </div>
   );
 }
